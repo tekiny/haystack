@@ -1,25 +1,18 @@
-from typing import Optional, List, Callable, Dict, Any
+from typing import Optional, List, Callable, Dict, Any, Union
 
 import sys
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, asdict
-
+import dataclasses
 import openai
 
 from haystack.preview import component, default_from_dict, default_to_dict, DeserializationError
-
+from haystack.preview.dataclasses.chat_message import ChatMessage
 
 logger = logging.getLogger(__name__)
 
 
 API_BASE_URL = "https://api.openai.com/v1"
-
-
-@dataclass
-class _ChatMessage:
-    content: str
-    role: str
 
 
 def default_streaming_callback(chunk):
@@ -141,22 +134,29 @@ class GPTGenerator:
         return default_from_dict(cls, data)
 
     @component.output_types(replies=List[str], metadata=List[Dict[str, Any]])
-    def run(self, prompt: str):
+    def run(self, prompt: Union[str, List[ChatMessage]]):
         """
         Queries the LLM with the prompts to produce replies.
 
-        :param prompts: The prompts to be sent to the generative model.
+        :param prompt: The prompts to be sent to the generative model.
         """
-        message = _ChatMessage(content=prompt, role="user")
-        if self.system_prompt:
-            chat = [_ChatMessage(content=self.system_prompt, role="system"), message]
+        messages: List[ChatMessage] = []
+        if isinstance(prompt, str):
+            message = ChatMessage.from_user(prompt)
+            if self.system_prompt:
+                messages = [ChatMessage.from_system(self.system_prompt), message]
+            else:
+                messages = [message]
+        elif isinstance(prompt, list) and all(isinstance(message, ChatMessage) for message in prompt):
+            messages = prompt
         else:
-            chat = [message]
-
+            raise ValueError(
+                f"Invalid prompt. Expected either a string or a list of ChatMessage(s), but got {type(prompt)}"
+            )
         completion = openai.ChatCompletion.create(
             model=self.model_name,
             api_key=self.api_key,
-            messages=[asdict(message) for message in chat],
+            messages=[dataclasses.asdict(message) for message in messages],
             stream=self.streaming_callback is not None,
             **self.model_parameters,
         )
