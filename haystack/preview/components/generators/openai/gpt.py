@@ -1,3 +1,4 @@
+import json
 from typing import Optional, List, Callable, Dict, Any, Union
 
 import sys
@@ -5,6 +6,7 @@ import logging
 from collections import defaultdict
 import dataclasses
 import openai
+from openai.openai_object import OpenAIObject
 
 from haystack.preview import component, default_from_dict, default_to_dict, DeserializationError
 from haystack.preview.dataclasses.chat_message import ChatMessage
@@ -153,60 +155,38 @@ class GPTGenerator:
             raise ValueError(
                 f"Invalid prompt. Expected either a string or a list of ChatMessage(s), but got {type(prompt)}"
             )
+        openai_chat_message_format = ["role", "content", "name"]
         completion = openai.ChatCompletion.create(
             model=self.model_name,
             api_key=self.api_key,
-            messages=[dataclasses.asdict(message) for message in messages],
+            messages=[
+                dataclasses.asdict(
+                    m, dict_factory=lambda obj: {k: v for k, v in obj if k in openai_chat_message_format and v}
+                )
+                for m in messages
+            ],
             stream=self.streaming_callback is not None,
             **self.model_parameters,
         )
 
-        replies: List[str]
-        metadata: List[Dict[str, Any]]
-        if self.streaming_callback:
-            replies_dict: Dict[str, str] = defaultdict(str)
-            metadata_dict: Dict[str, Dict[str, Any]] = defaultdict(dict)
-            for chunk in completion:
-                chunk = self.streaming_callback(chunk)
-                for choice in chunk.choices:
-                    if hasattr(choice.delta, "content"):
-                        replies_dict[choice.index] += choice.delta.content
-                    metadata_dict[choice.index] = {
-                        "model": chunk.model,
-                        "index": choice.index,
-                        "finish_reason": choice.finish_reason,
-                    }
-            replies = list(replies_dict.values())
-            metadata = list(metadata_dict.values())
-            self._check_truncated_answers(metadata)
-            return {"replies": replies, "metadata": metadata}
+        replies: List[ChatMessage] = [self._build_response(completion, choice) for choice in completion.choices]
+        return {"replies": replies}
 
-        metadata = [
+    def _build_response(self, completion: OpenAIObject, choice: OpenAIObject) -> ChatMessage:
+        """
+        Converts the response from the OpenAI API to a ChatMessage.
+        """
+        message: ChatMessage
+        if choice.finish_reason == "function_call":
+            message = ChatMessage.from_assistant(content=json.loads(str(choice.message.function_call)))
+        else:
+            message = ChatMessage.from_assistant(content=choice.message.content)
+        message.metadata.update(
             {
                 "model": completion.model,
                 "index": choice.index,
                 "finish_reason": choice.finish_reason,
                 "usage": dict(completion.usage.items()),
             }
-            for choice in completion.choices
-        ]
-        replies = [choice.message.content.strip() for choice in completion.choices]
-        self._check_truncated_answers(metadata)
-        return {"replies": replies, "metadata": metadata}
-
-    def _check_truncated_answers(self, metadata: List[Dict[str, Any]]):
-        """
-        Check the `finish_reason` returned with the OpenAI completions.
-        If the `finish_reason` is `length`, log a warning to the user.
-
-        :param result: The result returned from the OpenAI API.
-        :param payload: The payload sent to the OpenAI API.
-        """
-        truncated_completions = sum(1 for meta in metadata if meta.get("finish_reason") != "stop")
-        if truncated_completions > 0:
-            logger.warning(
-                "%s out of the %s completions have been truncated before reaching a natural stopping point. "
-                "Increase the max_tokens parameter to allow for longer completions.",
-                truncated_completions,
-                len(metadata),
-            )
+        )
+        return message
