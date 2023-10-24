@@ -81,20 +81,22 @@ class PromptBuilder:
         :param template: Template string to be rendered.
         :param template_variables: List of template variables to be used as input types.
         """
+        # dynamic per-user message templating
         if template_variables:
             # treat vars as optional input slots
             dynamic_input_slots = {var: Optional[Any] for var in template_variables}
+        # static templating
         else:
             if not template:
                 raise ValueError("Either template or template_variables must be provided.")
             self.template = Template(template)
             ast = self.template.environment.parse(template)
-            template_variables = meta.find_undeclared_variables(ast)
+            static_template_variables = meta.find_undeclared_variables(ast)
             # treat vars as required input slots - as per design
-            dynamic_input_slots = {var: Any for var in template_variables}
+            dynamic_input_slots = {var: Any for var in static_template_variables}
 
         # always provide all serialized vars, so we can serialize
-        # the component regardless of the initialization method
+        # the component regardless of the initialization method (static vs. dynamic)
         self.template_variables = template_variables
         self._template_string = template
 
