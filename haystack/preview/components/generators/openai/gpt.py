@@ -176,6 +176,8 @@ class GPTGenerator:
             stream=self.streaming_callback is not None,
             **self.model_parameters,
         )
+
+        completions: List[ChatMessage]
         if self.streaming_callback:
             # buckets for n responses
             chunk_buckets = defaultdict(list)
@@ -188,9 +190,9 @@ class GPTGenerator:
                     chunk_buckets[index].append(chunk_delta)
                     # invoke callback with the chunk_delta
                     self.streaming_callback(chunk_delta)
-            completions: List[ChatMessage] = self._collect_chunks(chunk_buckets)
+            completions = self._collect_chunks(chunk_buckets)
         else:
-            completions: List[ChatMessage] = [self._build_message(completion, choice) for choice in completion.choices]
+            completions = [self._build_message(completion, choice) for choice in completion.choices]
 
         # before returning, do post-processing of the completions
         for completion in completions:
