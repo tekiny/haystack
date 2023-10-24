@@ -188,10 +188,15 @@ class GPTGenerator:
                     chunk_buckets[index].append(chunk_delta)
                     # invoke callback with the chunk_delta
                     self.streaming_callback(chunk_delta)
-            replies: List[ChatMessage] = self._collect_chunks(chunk_buckets)
+            completions: List[ChatMessage] = self._collect_chunks(chunk_buckets)
         else:
-            replies: List[ChatMessage] = [self._build_message(completion, choice) for choice in completion.choices]
-        return {"replies": replies}
+            completions: List[ChatMessage] = [self._build_message(completion, choice) for choice in completion.choices]
+
+        # before returning, do post-processing of the completions
+        for completion in completions:
+            self._post_receive(completion)
+
+        return {"replies": completions}
 
     def _build_message(self, completion: OpenAIObject, choice: OpenAIObject) -> ChatMessage:
         """
@@ -221,7 +226,7 @@ class GPTGenerator:
             content = str(choice.delta.function_call)
         else:
             content = ""
-        # TODO: these should perhaps be ChatMessageChunk objects; revisit this
+        # TODO: these should perhaps be ChatMessageChunk objects
         chunk_message = ChatMessage.from_assistant(content)
         chunk_message.metadata.update(
             {"model": chunk.model, "index": choice.index, "finish_reason": choice.finish_reason}
@@ -231,6 +236,32 @@ class GPTGenerator:
     def _collect_chunks(self, chunk_buckets: Dict[int, List[ChatMessage]]):
         content_list = ["".join([chunk.content for chunk in chunk_list]) for chunk_list in chunk_buckets.values()]
         replies: List[ChatMessage] = [
-            ChatMessage.from_assistant(content, chunk_buckets[i][-1].metadata) for i, content in enumerate(content_list)
+            # take metadata from the last chunk in the bucket
+            ChatMessage.from_assistant(content, chunk_buckets[i][-1].metadata)
+            for i, content in enumerate(content_list)
         ]
         return replies
+
+    def _check_finish_reason(self, message: ChatMessage) -> None:
+        """
+        Check the `finish_reason` returned with the OpenAI completions.
+        If the `finish_reason` is `length`, log a warning to the user.
+        :param message: The message returned by the LLM.
+        """
+        if message.metadata["finish_reason"] == "length":
+            logger.warning(
+                "The completion for index %s has been truncated before reaching a natural stopping point. "
+                "Increase the max_tokens parameter to allow for longer completions.",
+                message.metadata["index"],
+            )
+        if message.metadata["finish_reason"] == "content_filter":
+            logger.warning(
+                "The completion for index %s has been truncated due to the content filter.", message.metadata["index"]
+            )
+
+    def _post_receive(self, message: ChatMessage) -> None:
+        """
+        Post-processing of the message received from the LLM.
+        :param message: The message returned by the LLM.
+        """
+        self._check_finish_reason(message)

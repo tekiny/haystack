@@ -283,21 +283,31 @@ class TestGPTGenerator:
             )
 
     @pytest.mark.unit
-    def test_check_truncated_answers(self, caplog):
-        # component = GPTGenerator(api_key="test-api-key")
-        # metadata = [
-        #     {"finish_reason": "stop"},
-        #     {"finish_reason": "content_filter"},
-        #     {"finish_reason": "length"},
-        #     {"finish_reason": "stop"},
-        # ]
-        # TODO: Fix this test
-        # component._check_truncated_answers(metadata)
-        # assert caplog.records[0].message == (
-        #     "2 out of the 4 completions have been truncated before reaching a natural "
-        #     "stopping point. Increase the max_tokens parameter to allow for longer completions."
-        # )
-        pass
+    def test_check_abnormal_completions(self, caplog):
+        component = GPTGenerator(api_key="test-api-key")
+        messages = [
+            ChatMessage.from_assistant(
+                "", metadata={"finish_reason": "content_filter" if i % 2 == 0 else "length", "index": i}
+            )
+            for i, _ in enumerate(range(4))
+        ]
+
+        for m in messages:
+            component._post_receive(m)
+
+        # check truncation warning
+        message_template = (
+            "The completion for index {index} has been truncated before reaching a natural stopping point. "
+            "Increase the max_tokens parameter to allow for longer completions."
+        )
+
+        for index in [1, 3]:
+            assert caplog.records[index].message == message_template.format(index=index)
+
+        # check content filter warning
+        message_template = "The completion for index {index} has been truncated due to the content filter."
+        for index in [0, 2]:
+            assert caplog.records[index].message == message_template.format(index=index)
 
     @pytest.mark.skipif(
         not os.environ.get("OPENAI_API_KEY", None),
