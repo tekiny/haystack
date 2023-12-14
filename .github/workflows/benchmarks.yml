@@ -78,7 +78,7 @@ jobs:
           python datadog/send_metrics.py out/ ${{ secrets.CORE_DATADOG_API_KEY }} https://api.datadoghq.eu
 
       - name: Archive benchmark results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: benchmark-results-reader
           path: test/benchmarks/out/
@@ -126,7 +126,7 @@ jobs:
           python datadog/send_metrics.py out/ ${{ secrets.CORE_DATADOG_API_KEY }} https://api.datadoghq.eu
 
       - name: Archive benchmark results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: benchmark-results-elasticsearch
           path: test/benchmarks/out/
@@ -175,7 +175,7 @@ jobs:
           python datadog/send_metrics.py out/ ${{ secrets.CORE_DATADOG_API_KEY }} https://api.datadoghq.eu
 
       - name: Archive benchmark results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: benchmark-results-weaviate
           path: test/benchmarks/out/
@@ -224,7 +224,7 @@ jobs:
           python datadog/send_metrics.py out/ ${{ secrets.CORE_DATADOG_API_KEY }} https://api.datadoghq.eu
 
       - name: Archive benchmark results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: benchmark-results-opensearch
           path: test/benchmarks/out/
